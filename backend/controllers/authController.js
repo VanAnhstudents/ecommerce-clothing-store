@@ -118,7 +118,7 @@ const login = async (req, res) => {
     }
 };
 
-export default {
+export {
     register,
     login
 };

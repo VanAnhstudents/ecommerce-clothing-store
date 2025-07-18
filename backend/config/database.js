@@ -27,29 +27,38 @@ const testConnection = async () => {
     }
 };
 
-export default {
-    pool,
-    testConnection
-};
-
-// Also export named exports for backward compatibility
-export { pool, testConnection };
-
-const execute = async (sql, params = []) => {
-  let connection;
+// Cải thiện hàm execute để hỗ trờ transaction
+const execute = async (sql, params = [], connection = null) => {
+  let conn = connection;
+  let shouldRelease = false;
+  
   try {
-    connection = await pool.getConnection(); 
-    const [rows, fields] = await connection.execute(sql, params); 
-    return { rows, fields }; 
+    if (!conn) {
+      conn = await pool.getConnection();
+      shouldRelease = true;
+    }
+    
+    const [rows, fields] = await conn.execute(sql, params);
+    return { rows, fields };
   } catch (error) {
     console.error('MySQL Query Error:', error.message);
     console.error('SQL:', sql);
     console.error('Parameters:', params);
-    throw error; 
+    throw error;
   } finally {
-    if (connection) {
-      connection.release(); 
+    if (shouldRelease && conn) {
+      conn.release();
     }
+  }
+};
+
+const getConnectionForTransaction = async () => {
+  try {
+    const connection = await pool.getConnection();
+    return connection;
+  } catch (error) {
+    console.error('Error getting connection for transaction:', error.message);
+    throw error;
   }
 };
 
@@ -64,5 +73,26 @@ const checkDbConnection = async () => {
   }
 };
 
-// EXPORT pool CŨNG VẬY
-export { pool, execute, checkDbConnection }; 
+const withTransaction = async (callback) => {
+  const connection = await getConnectionForTransaction();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+export {
+  pool,
+  testConnection, 
+  execute, 
+  checkDbConnection, 
+  getConnectionForTransaction, 
+  withTransaction 
+};
